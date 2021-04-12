@@ -23,14 +23,15 @@ import assert from 'assert';
 import * as util from 'util';
 import * as path from 'path';
 import * as os from 'os';
-import * as I18N from '../../../lib/i18n';
 import JSONStream from 'JSONStream';
+import * as I18N from '../../../lib/i18n';
 import {
     getType,
     getElementType,
     argnameFromLabel,
     loadSchemaOrgManifest
 } from './utils';
+import * as StreamUtils from '../../../lib/utils/stream-utils';
 
 const INSTANCE_OF_PROP = "P31";
 
@@ -39,7 +40,6 @@ class ParamDatasetGenerator {
         this._locale = options.locale;
         this._domain = options.domain;
         this._canonical = options.canonical;
-        this._input_dir = options.inputDir;
         this._output_dir = options.outputDir;
         this._maxValueLength = options.maxValueLength;
         this._tokenizer = I18N.get(options.locale).getTokenizer();
@@ -47,10 +47,21 @@ class ParamDatasetGenerator {
         this._schemaorgProperties = {};
         this._properties = {};
         this._instances = new Set();
-        this._property_item_map_path = path.join(this._output_dir, this._canonical, 'property_item_map.json');
-        this._instance_file_path = path.join(this._output_dir, this._canonical, 'instances.txt');
-        this._property_value_map_path = path.join(this._output_dir, this._canonical, 'property_item_values.json');
-        this._instance_value_map_path = path.join(this._output_dir, this._canonical, 'instance_item_values.json');
+        this._wikidataPaths = {
+            kb: options.kb,
+            kbReversed: options.kbReversed,
+            entityLabels: options.entities,
+            propertyLabels: options.properties,
+        };
+        this._domainPaths = {    
+            entities: path.join(this._output_dir, 'instances.txt'),
+            properties: path.join(this._output_dir, 'properties.txt'),
+            predicates: path.join(this._output_dir, 'property_item_map.json'),
+            objectLabels: path.join(this._output_dir, 'property_item_values.json'),
+            subjectLabels: path.join(this._output_dir, 'instance_item_values.json'),
+            parameterDatasets: path.join(this._output_dir, 'parameter-datastes'),
+            parameterDatasetsManifest: path.join(this._output_dir, 'parameter-datasets.tsv')
+        };
     }
 
     async _readSync(func, dir) {
@@ -62,10 +73,9 @@ class ParamDatasetGenerator {
      * Find data type and value and output corresponding json/tsv files.
      */
     async _processData(canonical) {
-        const domainProperties = JSON.parse(await this. _readSync(fs.readFile, this._property_item_map_path));
-        const propertyLabels = JSON.parse(await this. _readSync(fs.readFile, 'filtered_property_wikidata4.json'));
-        const itemLabels = JSON.parse(await this. _readSync(fs.readFile, this._property_value_map_path));
-        const outputDir = path.join(this._output_dir, canonical, 'parameter-datasets');
+        const domainProperties = JSON.parse(await this. _readSync(fs.readFile, this._domainPaths.properties));
+        const propertyLabels = JSON.parse(await this. _readSync(fs.readFile, this._wikidataPaths.propertyLabels));
+        const objectLabels = JSON.parse(await this. _readSync(fs.readFile, this._domainPaths.objectLabels));
         const datasetPathes = new Set();
         const filteredDomainProperties = [];
         
@@ -98,18 +108,18 @@ class ParamDatasetGenerator {
             }
 
             // Set file path based on if string or entity
-            const outputPath = path.join(outputDir, `${fileId}.${isEntity?'json':'tsv'}`);
+            const outputPath = path.join(this._domainPaths.parameterDatasets, `${fileId}.${isEntity?'json':'tsv'}`);
 
             const data = [];
             for (const qid of qids) {
                 // Tokenizer throws error.
-                if (itemLabels[qid].includes('æ'))
+                if (objectLabels[qid].includes('æ'))
                     continue;
                 // tsv record length get's messed up and constants sampler throws error.
-                if (type.isString && itemLabels[qid].startsWith('"'))
+                if (type.isString && objectLabels[qid].startsWith('"'))
                     continue;
 
-                const tokens = this._tokenizer.tokenize(itemLabels[qid]).tokens;
+                const tokens = this._tokenizer.tokenize(objectLabels[qid]).tokens;
                 // if some tokens are uppercase, they are entities, like NUMBER_0,
                 // in which case we ignore this value
                 if (tokens.length === 0 || tokens.some((tok) => /^[A-Z]/.test(tok)))
@@ -123,13 +133,13 @@ class ParamDatasetGenerator {
 
                 if (isEntity) {
                     data.push({
-                        'value': itemLabels[qid],
+                        'value': objectLabels[qid],
                         'name': qid,
                         'canonical': tokenizedString
                     });
                 } else {
                     const weight = 1;
-                    data.push(`${itemLabels[qid]}\t${tokenizedString}\t${weight}`);
+                    data.push(`${objectLabels[qid]}\t${tokenizedString}\t${weight}`);
                 }
             }
 
@@ -140,7 +150,7 @@ class ParamDatasetGenerator {
                 let dataPath;
                 if (isEntity) {
                     let outData = { result: 'ok', data };
-                    dataPath = `entity\t${this._locale}\t${fileId}\t${path.relative(path.join(this._output_dir, canonical), outputPath)}\n`;
+                    dataPath = `entity\t${this._locale}\t${fileId}\t${path.relative(this._output_dir, outputPath)}\n`;
                     if (datasetPathes.has(dataPath)) {
                         outData = JSON.parse(await this. _readSync(fs.readFile, outputPath));
                         // Just keep unique values
@@ -148,7 +158,7 @@ class ParamDatasetGenerator {
                     }
                     await util.promisify(fs.writeFile)(outputPath, JSON.stringify(outData, undefined, 2), { encoding: 'utf8' });
                 } else {
-                    dataPath = `string\t${this._locale}\t${fileId}\t${path.relative(path.join(this._output_dir, canonical), outputPath)}\n`;
+                    dataPath = `string\t${this._locale}\t${fileId}\t${path.relative(this._output_dir, outputPath)}\n`;
                     let outData = data.join(os.EOL).concat(os.EOL);
                     await util.promisify(fs.appendFile)(outputPath, outData, { encoding: 'utf8' });
                 }
@@ -214,19 +224,18 @@ class ParamDatasetGenerator {
      * Appends the predicates and their subject as { pid: [subject qids] } to property_item_map.json.
      */
     async _mapDomainRevProperties(canonical) {
-        if (!fs.existsSync(this._property_item_map_path) || !fs.existsSync(this._instance_file_path)) 
-            throw Error('Required file(s) missing.');
+        assert(fs.existsSync(this._domainPaths.predicates) && fs.existsSync(this._domainPaths.entities));
 
         console.log('Processing comp_wikidata_rev.json');
-        const properties = JSON.parse(await this. _readSync(fs.readFile, this._property_item_map_path));
-        const instanceQids = new Set((await this. _readSync(fs.readFile, this._instance_file_path)).split(','));        
-        const filteredProperties = JSON.parse(await this. _readSync(fs.readFile, 'filtered_property_wikidata4.json'));
-        const pipeline = fs.createReadStream(path.join(this._input_dir, `comp_wikidata_rev.json`)).pipe(JSONStream.parse('$*'));
+        const properties = JSON.parse(await this. _readSync(fs.readFile, this._domainPaths.predicates));
+        const instanceQids = new Set((await this. _readSync(fs.readFile, this._domainPaths.entities)).split(','));        
+        const propertyLables = JSON.parse(await this. _readSync(fs.readFile, this._wikidataPaths.propertyLabels));
+        const pipeline = fs.createReadStream(path.join(this._input_dir, this._wikidataPaths.kbReversed)).pipe(JSONStream.parse('$*'));
 
         pipeline.on('data', async (data) => {
             if (instanceQids.has(data.key)) {
                 for (const [key, value] of Object.entries(data.value)) {
-                    if (key in filteredProperties) {
+                    if (key in propertyLables) {
                         if (!(key in properties))
                             properties[key] = [];
 
@@ -240,7 +249,6 @@ class ParamDatasetGenerator {
         pipeline.on('end', async () => {
             console.log(`Found ${instanceQids.size} instances in ${canonical} domain with ${Object.keys(properties).length} properties.`);
             await util.promisify(fs.writeFile)(this._property_item_map_path, JSON.stringify(properties), { encoding: 'utf8' });
-            await this._filterItemValues(canonical);
         });
     }
 
@@ -249,30 +257,43 @@ class ParamDatasetGenerator {
      * Find an entity that is instance of the domain and output as comma separated string (instances.txt).
      * Collects the predicates and their object as { pid: [object qids] } map (property_item_map.json).
      */
-    async _mapDomainProperties(domain, canonical, idx, mapReverse) {
-        console.log(`Processing wikidata_short_${idx + 1}.json`);
-        const filteredProperties = JSON.parse(await this. _readSync(fs.readFile, 'filtered_property_wikidata4.json'));
-        const pipeline = fs.createReadStream(path.join(this._input_dir, `wikidata_short_${idx + 1}.json`)).pipe(JSONStream.parse('$*'));
-
-        pipeline.on('data', async (data) => {
-            if (INSTANCE_OF_PROP in data.value) {
-                const entry = new Set(data.value[INSTANCE_OF_PROP]);
-                // Find an entity that is instance of the domain.
-                if (entry.has(domain)) {
-                    for (const [key, value] of Object.entries(data.value)) {
-                        // Check if in filtered properties map.
-                        if (key in filteredProperties) {
-                            if (!(key in this._properties))
-                                this._properties[key] = [];
-                            // Add to property as a key to property to item qid array map
-                            this._properties[key] = Array.from(new Set(this._properties[key].concat(value)));
+    async _mapDomainProperties(domain, canonical) {
+        for (const file of this._wikidataPaths.kb) {
+            console.log(`Processing ${file}`);
+            const propertyLabels = JSON.parse(await this. _readSync(fs.readFile, this._wikidataPaths.propertyLabels));
+            const pipeline = fs.createReadStream(file).pipe(JSONStream.parse('$*'));
+            pipeline.on('data', async (data) => {
+                if (INSTANCE_OF_PROP in data.value) {
+                    const entry = new Set(data.value[INSTANCE_OF_PROP]);
+                    // Find an entity that is instance of the domain.
+                    if (entry.has(domain)) {
+                        for (const [key, value] of Object.entries(data.value)) {
+                            // Check if in filtered properties map.
+                            if (key in propertyLabels) {
+                                if (!(key in this._properties))
+                                    this._properties[key] = [];
+                                // Add to property as a key to property to item qid array map
+                                this._properties[key] = Array.from(new Set(this._properties[key].concat(value)));
+                            }
                         }
+                        // Add to list of domain instances.
+                        this._instances.add(String(data.key));
                     }
-                    // Add to list of domain instances.
-                    this._instances.add(String(data.key));
                 }
-            }
-        });
+            });
+            pipeline.on('error', (error) => console.error(error));
+            await StreamUtils.waitEnd();
+        }
+
+        console.log(`Found ${this._instances.size} instances in ${canonical} domain with ${Object.keys(this._properties).length} properties.`);
+        await Promise.all([
+            util.promisify(fs.writeFile)(this._property_item_map_path, 
+                JSON.stringify(this._properties), { encoding: 'utf8' }),
+            util.promisify(fs.writeFile)(this._domainPaths.predicates, 
+                Array.from(this._instances).join(','), { encoding: 'utf8' })    
+        ]);
+        
+    
 
         pipeline.on('error', (error) => console.error(error));
         pipeline.on('end', async () => {
@@ -280,7 +301,6 @@ class ParamDatasetGenerator {
             if (idx !== 0) {
                await this._mapDomainProperties(domain, canonical, idx - 1, mapReverse);
             } else {
-                console.log(`Found ${this._instances.size} instances in ${canonical} domain with ${Object.keys(this._properties).length} properties.`);
                 await Promise.all([
                     util.promisify(fs.writeFile)(this._property_item_map_path, 
                         JSON.stringify(this._properties), { encoding: 'utf8' }),
@@ -297,6 +317,14 @@ class ParamDatasetGenerator {
         });
     }
 
+    _inDomainDataPreprocessed() {
+        for (const file of ['entitie', 'predicates', 'subject', 'object']) {
+            if (!fs.existsSync(this._domainPaths[file]))
+                return false;
+        }
+        return true;
+    }
+
     async run() {
         // Required CSQA Wikidata json files
         assert(fs.existsSync('filtered_property_wikidata4.json'));
@@ -308,18 +336,10 @@ class ParamDatasetGenerator {
         await loadSchemaOrgManifest(this._schemaorgManifest, this._schemaorgProperties);
 
         // Process domain property map for the first time then process data.
-        if (!fs.existsSync(this._property_item_map_path) || 
-            !fs.existsSync(this._instance_file_path) ||
-            !fs.existsSync( this._property_value_map_path) ||
-            !fs.existsSync(this._instance_value_map_path)) {
-            assert(fs.existsSync(path.join(this._input_dir, 'items_wikidata_n.json')));
-            assert(fs.existsSync(path.join(this._input_dir, 'wikidata_short_1.json')));
-            assert(fs.existsSync(path.join(this._input_dir, 'wikidata_short_2.json')));
-            assert(fs.existsSync(path.join(this._input_dir, 'comp_wikidata_rev.json')));
+        if (!this._inDomainDataPreprocessed) 
             await this._mapDomainProperties(this._domain, this._canonical, 1, true);
-        } else {
-            await this._processData(this._canonical);
-        }
+        
+        await this._processData(this._canonical);
     }
 }
 
@@ -332,8 +352,25 @@ module.exports = {
         parser.add_argument('-o', '--output', {
             required: true,
         });
-        parser.add_argument('-i', '--input', {
+        parser.add_argument('--property-list', {
             required: true,
+            help: "full list of property in the wikidata dump, named filtered_property_wikidata4.json"
+                + "in CSQA, in the form of a dictionary with PID as keys and canonical as values."
+        });
+        parser.add_argument('--entity-list', {
+            required: false,
+            help: "full list of entities in the wikidata dump, named items_wikidata_n.json in CSQA," + 
+                "in the form of a dictionary with QID as keys and canonical as values."
+        });
+        parser.add_argument('--kownledge-base', {
+            required: false,
+            nargs: '+',
+            help: "full knowledge base of wikidata, named wikidata_short_1.json and wikidata_short_2.json"
+        });
+        parser.add_argument('--knowledge-base-rev', {
+            required: false, 
+            nargs: '+',
+            help: "full knowledge base reversed, organized using object as key, named comp_wikidata_rev.json"
         });
         parser.add_argument('--locale', {
             required: false,
@@ -341,7 +378,7 @@ module.exports = {
         });
         parser.add_argument('--domain', {
             required: true,
-            help: 'athedomain (by item id) to process data'
+            help: 'the domain (by item id) to process data'
         });
         parser.add_argument('--domain-canonical', {
             required: true,
@@ -362,7 +399,10 @@ module.exports = {
             locale: args.locale,
             domain: args.domain,
             canonical: args.domain_canonical,
-            inputDir: args.input,
+            propertyList: args.property_list,
+            entityList: args.entity_list,
+            kb: args.knowledge_base,
+            kbReversed: args.knowledge_base_rev,
             outputDir: args.output,
             schemaorgManifest:args.schemaorg_manifest,
             maxValueLength: args.max_value_length
