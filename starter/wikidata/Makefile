@@ -121,11 +121,11 @@ models/paraphraser-bart:
 %/wikidata.tt: %/parameter-datasets.tsv $(geniedir)/tool/autoqa/wikidata/process-schema.js
 	mkdir -p $(dir $@)
 	$(genie) wikidata-process-schema  -o $@.tmp --entities $(experiment)/entities.json \
-		--domains $(class) \
-		--domain-canonicals $(canonical) \
-		--parameter-datasets $*/parameter-datasets.tsv \
-		--properties $(shell cat $(dir $@)properties.txt) \
-		$(process_schemaorg_flags)
+	  --domains $(class) \
+	  --domain-canonicals $(canonical) \
+	  --parameter-datasets $*/parameter-datasets.tsv \
+	  --properties $(shell cat $(dir $@)properties.txt) \
+	  $(process_schemaorg_flags)
 	mv $@.tmp $@
 
 emptydataset.tt:
@@ -162,11 +162,11 @@ raw/csqa-wikidata:
 
 %/parameter-datasets.tsv: shared-parameter-datasets.tsv filtered_property_wikidata4.json $(if ${use_preprocessed_wikidata},%/instances.txt %/property_item_map.json %/property_item_values.json %/instance_item_values.json,raw/csqa-wikidata)
 	$(genie) wikidata-preprocess-data \
-		--domain $(class) \
-		--domain-canonical $(canonical) \
-		--input raw/csqa-wikidata \
-		--output ./ \
-		$(process_schemaorg_flags)
+	  --domain $(class) \
+	  --domain-canonical $(canonical) \
+	  --input raw/csqa-wikidata \
+	  --output ./ \
+	  $(process_schemaorg_flags)
 	sed -e "s|$(echo -e '\t')shared-parameter-datasets|$(echo -e '\t')../shared-parameter-datasets|g" shared-parameter-datasets.tsv > $@
 
 %/constants.tsv: %/wikidata.tt %/parameter-datasets.tsv
@@ -176,12 +176,12 @@ raw/csqa-wikidata:
 
 %/manifest.tt: %/wikidata.tt %/constants.tsv %/parameter-datasets.tsv $(if $(findstring auto,$(annotation)),models/paraphraser-bart,) common-words.txt
 	$(genie) auto-annotate -o $@.tmp \
-		--constants $*/constants.tsv \
-		--thingpedia $*/wikidata.tt \
-		--functions $($(*)_canonical) \
-		$(annotate_flags) \
-		--parameter-datasets $*/parameter-datasets.tsv \
-		--dataset wikidata
+	  --constants $*/constants.tsv \
+	  --thingpedia $*/wikidata.tt \
+	  --functions $($(*)_canonical) \
+	  $(annotate_flags) \
+	  --parameter-datasets $*/parameter-datasets.tsv \
+	  --dataset wikidata
 	mv $@.tmp $@
 
 %/synthetic.tsv: %/manifest.tt $(dataset_file) $(geniedir)/languages-dist/thingtalk/en/*.js
@@ -215,11 +215,11 @@ raw/test:
 %/valid.tsv: %/manifest.tt $(if $(use_preprocessed_csqa_valid),%/valid.json,raw/valid)
 	mkdir -p datadir
 	$(genie) wikidata-convert-csqa \
-		--domain $(class) \
-		--domain-canonical $(canonical) \
-		--input raw/ \
-		--output . \
-		--dataset valid
+	  --domain $(class) \
+	  --domain-canonical $(canonical) \
+	  --input raw/ \
+	  --output . \
+	  --dataset valid
 
 %/valid_annotated.tsv: %/manifest.tt %/valid.tsv
 	$(genie) typecheck -o $*/valid_annotated.tsv --dropped $*/valid_dropped.tsv --thingpedia $*/manifest.tt $*/valid.tsv
@@ -229,19 +229,19 @@ datadir: $(experiment)/augmented.tsv $(if $(use_csqa_valid),$(experiment)/valid_
 	mkdir -p $(experiment)/$(eval_set)
 
 	if test -s $(experiment)/${eval_set}/annotated.tsv ; then \
-      cp $(experiment)/augmented.tsv $@/train.tsv ; \
-      cut -f1-3 $(experiment)/${eval_set}/annotated.tsv > $@/eval.tsv ; \
-    elif [ "$(use_csqa_valid)" = "true" ] ; then \
-      cp $(experiment)/augmented.tsv $@/train.tsv ; \
-      cp $(experiment)/valid_annotated.tsv $@/eval.tsv; \
-      cp $(experiment)/valid_annotated.tsv $(experiment)/$(eval_set)/annotated.tsv;\
-    else \
-      $(genie) split-train-eval --train $@/train.tsv --eval $@/eval.tsv \
-        --eval-probability 0.1 --split-strategy sentence \
-        --eval-on-synthetic $(experiment)/augmented.tsv ; \
-      mkdir -p $(experiment)/$(eval_set) ; \
-      cp $@/eval.tsv $(experiment)/$(eval_set)/annotated.tsv; \
-    fi
+	  cp $(experiment)/augmented.tsv $@/train.tsv ; \
+	  cut -f1-3 $(experiment)/${eval_set}/annotated.tsv > $@/eval.tsv ; \
+	elif [ "$(use_csqa_valid)" = "true" ] ; then \
+	  cp $(experiment)/augmented.tsv $@/train.tsv ; \
+	  cp $(experiment)/valid_annotated.tsv $@/eval.tsv; \
+	  cp $(experiment)/valid_annotated.tsv $(experiment)/$(eval_set)/annotated.tsv;\
+	else \
+	  $(genie) split-train-eval --train $@/train.tsv --eval $@/eval.tsv \
+	    --eval-probability 0.1 --split-strategy sentence \
+	    --eval-on-synthetic $(experiment)/augmented.tsv ; \
+	  mkdir -p $(experiment)/$(eval_set) ; \
+	  cp $@/eval.tsv $(experiment)/$(eval_set)/annotated.tsv; \
+	fi
 	touch $@
 
 train:
@@ -288,6 +288,6 @@ clean:
 	rm -rf datadir valid.tar.xz test.tar.xz paraphraser-bart.tar.xz wikidata_proc_json.zip
 	rm -f paraphraser-in.tsv paraphraser-out.json bert-canonical-annotator-in.json bert-canonical-annotator-out.json 
 	for exp in $(all_experiments) ; do \
-		rm -rf $$exp/synthetic* $$exp/entities.json $$exp/parameter-datasets* $$exp/wikidata.tt $$exp/manifest.tt $$exp/augmented.tsv $$exp/constants.tsv $$exp/*.tmp; \
-		rm -rf $$exp/valid.json $$exp/valid.tsv $$exp/valid_dropped.tsv $$exp/valid_annotated.tsv;\
+	  rm -rf $$exp/synthetic* $$exp/entities.json $$exp/parameter-datasets* $$exp/wikidata.tt $$exp/manifest.tt $$exp/augmented.tsv $$exp/constants.tsv $$exp/*.tmp; \
+	  rm -rf $$exp/valid.json $$exp/valid.tsv $$exp/valid_dropped.tsv $$exp/valid_annotated.tsv;\
 	done
