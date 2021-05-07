@@ -56,8 +56,8 @@ filter : C.FilterSlot = {
 }
 
 filtered_table : Ast.Expression = {
-    t:table f:filter => C.addFilter(t, f);
-    t:filtered_table 'and' f:filter => C.addFilter(t, f);
+    t:table f:filter => C.addFilter($loader, t, f);
+    t:filtered_table 'and' f:filter => C.addFilter($loader, t, f);
 
     // noun reverse
     ( t1:table 'that is' p:out_param_Any 'of' t2:table
