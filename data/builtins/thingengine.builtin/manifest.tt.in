@@ -368,4 +368,16 @@ class @org.thingpedia.builtin.thingengine.builtin
                 "set the default temperature unit"]]
   #[doc="change the user's preferred temperature unit (a setting)"]
   #[confirm=false];
+
+  action pause()
+  #_[canonical=["pause", "pause the music",  "pause music"]]
+  #_[confirmation="Audio has been paused"]
+  #[doc="pause the currently playing skill"]
+  #[confirm=false];
+
+  action resume()
+  #_[canonical=["resume", "resume the music",  "resume music"]]
+  #_[confirmation="Audio has been resumed"]
+  #[doc="resume the currently playing skill"]
+  #[confirm=false];
 }

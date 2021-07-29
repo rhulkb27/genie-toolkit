@@ -151,4 +151,14 @@ dataset @org.thingpedia.builtin.thingengine.builtin language "en" {
 
     program(p_duration : Measure(ms), p_message : String) = ontimer(date=[$now + p_duration]) => @org.thingpedia.builtin.thingengine.builtin.say(message=p_message)
     #_[utterances=["remind me to ${p_message} in ${p_duration}"]];
+
+    action = @org.thingpedia.builtin.thingengine.builtin.pause()
+    #_[utterances=["pause"]]
+    #[id=63269136]
+    #[name="pause"];
+
+    action = @org.thingpedia.builtin.thingengine.builtin.resume()
+    #_[utterances=["resume"]]
+    #[id=73269136]
+    #[name="resume"];
 }

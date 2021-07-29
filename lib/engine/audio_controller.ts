@@ -32,6 +32,8 @@ export default class AudioController extends events.EventEmitter {
 
     private _currentDevice : Tp.BaseDevice|null = null;
     private _releaseCallback : (() => void|Promise<void>)|null = null;
+    private _pauseCallback : (() => void|Promise<void>)|null = null;
+    private _resumeCallback : (() => void|Promise<void>)|null = null;
 
     constructor(devices : DeviceDatabase) {
         super();
@@ -47,7 +49,16 @@ export default class AudioController extends events.EventEmitter {
         this._devices.removeListener('device-removed', this._deviceRemovedListener);
         await this.stopAudio();
     }
-
+    async pause() {
+        if (this._pauseCallback) {
+          this._pauseCallback();
+        }
+    }
+    async resume() {
+      if (this._resumeCallback) {
+        this._resumeCallback();
+      }
+    }
     /**
      * Request background audio on behalf of the given device.
      *
@@ -60,17 +71,20 @@ export default class AudioController extends events.EventEmitter {
      *
      * This method can be called multiple times for the same device, with no effect.
      */
-    async requestAudio(device : Tp.BaseDevice, releaseCallback : () => void|Promise<void>) {
-        if (device === this._currentDevice) {
-            this._releaseCallback = releaseCallback;
-            return;
-        }
-
-        if (this._releaseCallback)
-            this._releaseCallback();
-        this._currentDevice = device;
-        console.log(`Switching audio to ${this._currentDevice.uniqueId}`);
-        this._releaseCallback = releaseCallback;
+    async requestAudio(device : Tp.BaseDevice, releaseCallback : () => void|Promise<void>, pauseCallback : () => void|Promise<void>, resumeCallback : () => void|Promise<void>) {
+      if (device === this._currentDevice) {
+          this._releaseCallback = releaseCallback;
+          this._pauseCallback = pauseCallback;
+          this._resumeCallback = resumeCallback;
+          return;
+      }
+      if (this._releaseCallback)
+          this._releaseCallback();
+      this._currentDevice = device;
+      console.log(`Switching audio to ${this._currentDevice.uniqueId}`);
+      this._releaseCallback = releaseCallback;
+      this._pauseCallback = pauseCallback;
+      this._resumeCallback = resumeCallback;
     }
 
     /**
@@ -93,10 +107,12 @@ export default class AudioController extends events.EventEmitter {
      * audio.
      */
     async releaseAudio(device : Tp.BaseDevice) {
-        if (device !== this._currentDevice)
-            return;
-        this._currentDevice = null;
-        this._releaseCallback = null;
+      if (device !== this._currentDevice)
+          return;
+      this._currentDevice = null;
+      this._releaseCallback = null;
+      this._pauseCallback = null;
+      this._resumeCallback = null;
     }
 
     /**
@@ -106,17 +122,21 @@ export default class AudioController extends events.EventEmitter {
      * playing. It corresponds to the command "stop".
      */
     async stopAudio() {
-        this.emit('stop');
-        if (this._releaseCallback)
-            await this._releaseCallback();
-        this._releaseCallback = null;
+      this.emit('stop');
+      if (this._releaseCallback)
+          await this._releaseCallback();
+      this._releaseCallback = null;
+      this._pauseCallback = null;
+      this._resumeCallback = null;
     }
 
     private _onDeviceRemoved(device : Tp.BaseDevice) {
-        if (device === this._currentDevice) {
-            console.log(`Audio device removed`);
-            this._currentDevice = null;
-            this._releaseCallback = null;
-        }
+      if (device === this._currentDevice) {
+          console.log(`Audio device removed`);
+          this._currentDevice = null;
+          this._releaseCallback = null;
+          this._pauseCallback = null;
+          this._resumeCallback = null;
+      }
     }
 }
